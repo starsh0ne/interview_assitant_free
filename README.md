@@ -6,6 +6,7 @@ Windows 桌面端，用于**线上面试实时辅助**：双源音频采集（�
 - 模型切换为官方 `deepseek-flash`（DeepSeek-V4.1-Flash）；低/中档关闭思考链，高档启用深度思考
 - 新增一键启动脚本 `启动面试辅助.bat`（自动建环境/装依赖/启动）
 - 新增模拟面试官录音与播放脚本，见 `tests/README_模拟面试测试.md`
+- Whisper small 模型与 5 段模拟提问 MP3 已随仓库分发；大文件通过 Git LFS 管理
 
 ## 功能
 
@@ -22,10 +23,16 @@ Windows 桌面端，用于**线上面试实时辅助**：双源音频采集（�
 ## 安装
 
 ```bash
-cd <项目目录>
+git clone https://github.com/starsh0ne/interview_assitant_free.git
+cd interview_assitant_free
+git lfs install
+git lfs pull          # 拉取 Whisper small 模型（约 460MB），必须执行
+
 uv venv --python 3.13 .venv
 uv pip install --python .venv/Scripts/python.exe -r requirements.lock.txt
 ```
+
+如未安装 Git LFS，请先安装：https://git-lfs.com 。未执行 `git lfs pull` 时，仓库里的 `model.bin` 只是指针文件，转写会失败。
 
 ## 配置
 
@@ -51,7 +58,7 @@ $env:DEEPSEEK_API_KEY = "sk-xxxxxxxx"
 
 ## 运行（一键）
 
-**双击 `启动面试辅助.bat`** —— 自动检查环境、依赖、模型并启动。首次运行会自动下载依赖与 Whisper 模型（需联网，约 500MB）。
+**双击 `启动面试辅助.bat`** —— 自动检查环境、依赖、模型并启动。模型已随仓库提供；首次运行仍会联网安装 Python 依赖，Whisper 模型无需再次下载（前提是已执行 `git lfs pull`）。
 
 手动运行：
 ```bash
@@ -104,6 +111,6 @@ python <log-first 技能目录>/scripts/loggrep.py --dir logs --trace-id <trace_
 
 - `.doc` 老式 Word 不支持，需另存为 `.docx`
 - 扫描版 PDF 需先 OCR（无法提取文字）
-- 首次转写会下载 faster-whisper 模型（small 约 500MB），需联网一次
+- 模型已随仓库分发，但依赖 Git LFS；未拉取 LFS 对象时 `model.bin` 为指针文件，需先执行 `git lfs pull`
 - 系统输出环回依赖声卡驱动支持 WASAPI loopback；无输出设备时仅采麦克风
 - 思考强度"高"会增加 token 消耗与延迟，实时场景建议用"低"

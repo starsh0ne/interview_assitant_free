@@ -2,15 +2,18 @@
 
 用于验证「系统输出环回采集 → 转写 → DeepSeek 分析 → 悬浮窗显示」全链路，无需真人面试官。
 
-## 准备（一次性）
+## 准备
+
+仓库已自带 `tests/interviewer_audio/q01.mp3 ~ q05.mp3`，内容见 `questions.txt`，无需生成即可测试。
+
+如需重新生成（联网，edge-tts 中文男声）：
 
 ```bash
 cd <项目目录>
-# 生成 5 段模拟面试官提问录音（联网，edge-tts 中文男声）
 .venv/Scripts/python.exe tests/generate_interviewer_audio.py
 ```
 
-产出 `tests/interviewer_audio/q01.mp3 ~ q05.mp3`，内容见 `questions.txt`。
+脚本会跳过已存在的 MP3；如要覆盖，请先删除对应文件。
 
 ## 测试步骤
 
