@@ -22,6 +22,7 @@ from app.core.config import AppConfig
 from app.core.models import ThinkLevel
 from app.logging_conf import get_logger
 from app.resume.parser import parse_resume, supported_extensions
+from app.ui.stealth import STEALTH_LABEL, apply_stealth_to_widget
 
 MODULE = "settings"
 
@@ -62,6 +63,11 @@ class SettingsWindow(QWidget):
 
     def _build_ui(self) -> None:
         root = QVBoxLayout(self)
+
+        self.stealth_label = QLabel(STEALTH_LABEL)
+        self.stealth_label.setStyleSheet("color: #1f8a4c; font-weight: bold;")
+        self.stealth_label.setWordWrap(True)
+        root.addWidget(self.stealth_label)
 
         # 简历
         resume_box = QGroupBox("1. 上传简历（开始前必填）")
@@ -126,6 +132,10 @@ class SettingsWindow(QWidget):
         btn_row.addWidget(self.btn_start)
         btn_row.addWidget(self.btn_stop)
         root.addLayout(btn_row)
+
+    def showEvent(self, event) -> None:
+        super().showEvent(event)
+        apply_stealth_to_widget(self, self.stealth_label)
 
     def _pick_resume(self) -> None:
         exts = " ".join(f"*{e}" for e in supported_extensions())

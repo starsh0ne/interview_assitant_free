@@ -13,6 +13,7 @@ from PySide6.QtGui import QFont
 from PySide6.QtWidgets import QFrame, QLabel, QVBoxLayout, QWidget
 
 from app.logging_conf import get_logger
+from app.ui.stealth import STEALTH_LABEL, apply_stealth_to_widget
 
 MODULE = "ui"
 
@@ -74,7 +75,17 @@ class OverlayWindow(QWidget):
         self.hint.setStyleSheet("color: #7a8296;")
         inner.addWidget(self.hint)
 
+        self.stealth_label = QLabel(STEALTH_LABEL)
+        self.stealth_label.setFont(QFont("Microsoft YaHei", 9))
+        self.stealth_label.setStyleSheet("color: #6fdc9a;")
+        inner.addWidget(self.stealth_label)
+
         outer.addWidget(self.card)
+
+    def showEvent(self, event) -> None:
+        """原生窗口创建后应用隐身；双击切置顶重建窗口时也会再次触发。"""
+        super().showEvent(event)
+        apply_stealth_to_widget(self, self.stealth_label)
 
     # ---- 拖动 ----
     def mousePressEvent(self, event):
@@ -97,6 +108,7 @@ class OverlayWindow(QWidget):
             flags |= Qt.WindowStaysOnTopHint
         self.setWindowFlags(flags)
         self.show()
+        apply_stealth_to_widget(self, self.stealth_label)
         self._log.info("置顶状态切换", module=MODULE, location="OverlayWindow.mouseDoubleClickEvent",
                        status="success", pinned=self._pinned)
 
