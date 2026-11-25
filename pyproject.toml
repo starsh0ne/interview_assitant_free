@@ -1,0 +1,34 @@
+[project]
+name = "interview-assist"
+version = "0.1.0"
+description = "Windows 桌面端面试实时辅助工具：双源音频采集 + 本地转写 + DeepSeek 要点式回答 + 置顶悬浮窗"
+requires-python = ">=3.11"
+dependencies = [
+    "pyside6>=6.7,<7",
+    "soundcard>=0.4,<1",          # WASAPI 环回采集系统输出
+    "numpy>=1.26,<3",             # VAD 能量计算
+    "faster-whisper>=1.0,<2",     # 本地异步语音转文字
+    "openai>=1.30,<3",            # DeepSeek OpenAI 兼容接口
+    "requests>=2.31",
+    "pypdf>=4.0,<7",              # PDF 简历解析
+    "python-docx>=1.1,<2",        # Word 简历解析
+    "pydantic>=2.6,<3",
+    "pydantic-settings>=2.2,<3",
+    "structlog>=24.1",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["app*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

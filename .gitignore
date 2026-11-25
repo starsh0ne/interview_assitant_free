@@ -1,0 +1,28 @@
+# 日志与本地运行产物（可能包含提问/回答/设备名，不入库）
+logs/
+.models_prepared
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+
+# 配置与密钥
+.env
+config.local.json
+*.local.json
+
+# 模型缓存
+.models/
+*.pt
+*.onnx
+
+# 模拟面试录音（由 tests/generate_interviewer_audio.py 生成，不入库）
+tests/interviewer_audio/*.mp3
+
+# IDE
+.idea/
+.vscode/
