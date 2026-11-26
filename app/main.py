@@ -43,6 +43,11 @@ def main() -> int:
              api_key_configured=bool(config.deepseek_api_key))
 
     app = QApplication(sys.argv)
+    # 两个窗口都是 Qt.Tool（不占任务栏）。Qt 默认 quitOnLastWindowClosed=True，
+    # 而 Tool 窗口不算"主窗口"——上传简历时模态文件对话框关闭后，Qt 会判定
+    # "最后一个主窗口已关闭"并退出应用（界面直接消失，日志无异常）。
+    # 关闭该行为，退出统一交由显式入口（见 _on_quit / 停止后的退出提示）。
+    app.setQuitOnLastWindowClosed(False)
     overlay = OverlayWindow()
     settings = SettingsWindow(config)
     overlay.show()
@@ -156,8 +161,20 @@ def main() -> int:
                       status="fail", error={"type": type(e).__name__, "message": str(e),
                                             "stack": traceback.format_exc()})
 
+    def on_quit():
+        nonlocal pipeline, capture
+        log.info("用户请求退出", module=MODULE, location="main.on_quit", status="start")
+        if capture:
+            capture.stop()
+            capture = None
+        if pipeline:
+            pipeline.stop()
+            pipeline = None
+        app.quit()
+
     settings.start_requested.connect(on_start)
     settings.stop_requested.connect(on_stop)
+    settings.quit_requested.connect(on_quit)
 
     log.info("应用初始化完成", module=MODULE, location="main", status="success")
     return app.exec()

@@ -42,6 +42,7 @@ RESUME_CARD_PROMPT = """把下面的简历压缩成一张「面试速查卡」�
 class SettingsWindow(QWidget):
     start_requested = Signal()   # 用户点"开始"
     stop_requested = Signal()    # 用户点"停止"
+    quit_requested = Signal()    # 用户点"退出"（Tool 窗口不触发自动退出，需显式入口）
     # 速查卡生成完成（后台线程 → UI 需跨线程，用信号）
     resume_card_ready = Signal(str)
 
@@ -172,8 +173,11 @@ class SettingsWindow(QWidget):
         self.btn_stop = QPushButton("停止")
         self.btn_stop.setEnabled(False)
         self.btn_stop.clicked.connect(self.stop_requested.emit)
+        btn_quit = QPushButton("退出程序")
+        btn_quit.clicked.connect(self.quit_requested.emit)
         btn_row.addWidget(self.btn_start)
         btn_row.addWidget(self.btn_stop)
+        btn_row.addWidget(btn_quit)
         root.addLayout(btn_row)
         self._reload_qa_list()
 
