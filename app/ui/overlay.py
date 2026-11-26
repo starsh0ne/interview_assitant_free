@@ -153,17 +153,20 @@ class OverlayWindow(QWidget):
 
     @Slot(str, float, str)
     def on_qa_hit(self, matched_question: str, score: float, trace_id: str) -> None:
-        """题库命中：本地标注相似度与原题，AI 流式标题不再覆盖。"""
+        """题库命中：明确标记"答案由题库直出"，并显示相似度与原题。"""
         self._qa_hit = True
         self._qa_score = score
-        self.title.setText(f"题库命中 · {score:.2f} · {trace_id[:8]}")
-        self.qa_label.setText(f"相似度 {score:.2f} · 命中题库：{matched_question}")
+        self.title.setText(f"答案由题库直出 · 相似度 {score:.2f} · {trace_id[:8]}")
+        self.qa_label.setText(
+            f"答案由题库直出（未调用 AI） · 相似度 {score:.2f} · 命中问题：{matched_question}"
+        )
+        self.qa_label.setStyleSheet("color: #ffd479; font-weight: bold;")
         self.qa_label.show()
 
     @Slot(str, str, list, str)
     def on_answer(self, question: str, opener: str, points: list, trace_id: str) -> None:
         if self._qa_hit:
-            self.title.setText(f"题库命中 {self._qa_score:.2f} · {trace_id[:8]}")
+            self.title.setText(f"答案由题库直出 · 相似度 {self._qa_score:.2f} · {trace_id[:8]}")
         else:
             self.title.setText(f"AI 回答 · {trace_id[:8]}")
         self._stream_lines = 0   # 流式结束，最终幂等重绘

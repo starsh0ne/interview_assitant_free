@@ -114,8 +114,10 @@ def main() -> int:
             pipeline.error_occurred.connect(overlay.on_error)
             pipeline.qa_hit_ready.connect(overlay.on_qa_hit)
 
-            # 先启动流水线（工作线程就绪），再启动采集；用速查卡（降级为简历前600字）
-            pipeline.start(settings.effective_resume, level)
+            # 先启动流水线（工作线程就绪），再启动采集
+            # AI 上下文用速查卡（省 token），题库哈希必须用简历全文（与录入时一致）
+            pipeline.start(settings.effective_resume, level,
+                           qa_resume_text=settings.resume_text)
             capture.start()
 
             # D-预热：后台预载 whisper 模型 + LLM 建连，消除首次真实调用的冷启动

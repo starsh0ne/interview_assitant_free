@@ -138,9 +138,17 @@ class SettingsWindow(QWidget):
         self.qa_status.setStyleSheet("color: #7a8296;")
         qv.addWidget(self.qa_status)
 
+        # 已录入问题清单：只列问题文本，让录入结果一眼可见
         self.qa_list = QListWidget()
-        self.qa_list.setMaximumHeight(110)
+        self.qa_list.setMinimumHeight(150)
+        self.qa_list.setMaximumHeight(220)
+        self.qa_list.setToolTip("已录入的问题列表；换简历会切到该简历独立题库")
         qv.addWidget(self.qa_list)
+
+        self.qa_feedback = QLabel("")
+        self.qa_feedback.setWordWrap(True)
+        self.qa_feedback.setStyleSheet("color: #1f8a4c; font-weight: bold;")
+        qv.addWidget(self.qa_feedback)
 
         qa_form = QFormLayout()
         self.qa_question = QLineEdit()
@@ -196,6 +204,7 @@ class SettingsWindow(QWidget):
             text = parse_resume(path)
             self.resume_text = text
             self.resume_card = ""   # 新简历：作废旧速查卡
+            self.qa_feedback.setText("")   # 换简历后清掉上一份的录入反馈
             self._reload_qa_list()  # 简历变了 → 切到该简历的独立题库
             self.resume_path.setText(path)
             self.resume_status.setText(f"已加载 · {len(text)} 字符 · 速查卡生成中...")
@@ -264,11 +273,14 @@ class SettingsWindow(QWidget):
         self.qa_list.clear()
         if not self.resume_text:
             self.qa_status.setText("先上传简历，再录入题库")
+            self.qa_feedback.setText("")
             return
         entries = self.qa_store.load(self.resume_text)
         for entry in entries:
-            item = QListWidgetItem(f"[{entry.tag or '自定义'}] {entry.question}")
+            # 只展示问题；tag 放 tooltip，不干扰快速扫读
+            item = QListWidgetItem(entry.question)
             item.setData(Qt.UserRole, entry.id)
+            item.setToolTip(f"[{entry.tag or '自定义'}] {entry.question}\n答案：{entry.answer}")
             self.qa_list.addItem(item)
         self.qa_status.setText(
             f"简历 {resume_hash(self.resume_text)[:12]} · 题库 {len(entries)} 条 · "
@@ -289,6 +301,11 @@ class SettingsWindow(QWidget):
         self.qa_question.clear()
         self.qa_answer.clear()
         self._reload_qa_list()
+        count = len(self.qa_store.load(self.resume_text))
+        self.qa_feedback.setText(f"✓ 已录入（当前共 {count} 条）：{question}")
+        self._log.info("面板录入反馈", module=MODULE,
+                       location="SettingsWindow._on_qa_add", status="success",
+                       count=count, question=question[:40])
 
     def _on_qa_delete(self) -> None:
         if not self.resume_text:
@@ -298,6 +315,8 @@ class SettingsWindow(QWidget):
             return
         self.qa_store.delete(self.resume_text, item.data(Qt.UserRole))
         self._reload_qa_list()
+        count = len(self.qa_store.load(self.resume_text))
+        self.qa_feedback.setText(f"已删除该条（当前共 {count} 条）")
 
     def _on_qa_import_pg8(self) -> None:
         if not self.resume_text:
@@ -313,6 +332,11 @@ class SettingsWindow(QWidget):
             self.qa_store.add(self.resume_text, sample["question"], sample["answer"],
                               tag=sample["tag"], vector=vector.tolist())
         self._reload_qa_list()
+        count = len(self.qa_store.load(self.resume_text))
+        self.qa_feedback.setText(f"✓ 已导入宝洁八大问 {len(samples)} 条（当前共 {count} 条）")
+        self._log.info("面板导入反馈", module=MODULE,
+                       location="SettingsWindow._on_qa_import_pg8", status="success",
+                       added=len(samples), count=count)
 
     def _on_start(self) -> None:
         if not self.resume_text:

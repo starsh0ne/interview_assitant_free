@@ -52,7 +52,8 @@ class Pipeline(QObject):
         self.capture = capture
         self.transcriber = transcriber
         self.llm = llm
-        self.resume_text = ""
+        self.resume_text = ""        # AI prompt 用的上下文（速查卡 / 简历前 600 字）
+        self.qa_resume_text = ""     # 题库哈希用的简历全文——必须与录入时一致
         self.think_level: ThinkLevel = config.think_level
         self._stop_event = threading.Event()
         self._worker: threading.Thread | None = None
@@ -65,9 +66,15 @@ class Pipeline(QObject):
         self.qa_matcher = QAMatcher(self.qa_store, self.qa_embedder,
                                     config.qa_similarity_threshold)
 
-    def start(self, resume_text: str, think_level: ThinkLevel) -> None:
-        """启动流水线。必须在采集 start 之前调用。"""
+    def start(self, resume_text: str, think_level: ThinkLevel,
+              qa_resume_text: str | None = None) -> None:
+        """启动流水线。必须在采集 start 之前调用。
+
+        resume_text: 给 AI 的上下文（速查卡更省 token）。
+        qa_resume_text: 题库哈希用的简历全文，须与面板录入时一致；缺省退回 resume_text。
+        """
         self.resume_text = resume_text
+        self.qa_resume_text = qa_resume_text if qa_resume_text is not None else resume_text
         self.think_level = think_level
         self._stop_event.clear()
         self._self_context = []
@@ -76,7 +83,7 @@ class Pipeline(QObject):
         self._worker.start()
         self._log.info("流水线启动", module=MODULE, location="Pipeline.start",
                        status="start", think_level=think_level.value,
-                       resume_len=len(resume_text))
+                       resume_len=len(resume_text), qa_resume_len=len(self.qa_resume_text))
 
     def stop(self) -> None:
         self._stop_event.set()
@@ -157,8 +164,9 @@ class Pipeline(QObject):
             return
 
         # 面试官提问：先查本地题库，命中则直接回放，零 AI 调用
+        # 注意：用简历全文算哈希（与面板录入时一致），不能用速查卡，否则永远查不到题库
         if self.config.qa_enabled:
-            hit = self.qa_matcher.match(self.resume_text, transcript.text)
+            hit = self.qa_matcher.match(self.qa_resume_text or self.resume_text, transcript.text)
             if hit is not None:
                 log.info("题库命中，跳过 AI", module=MODULE,
                          location="Pipeline._handle_segment", status="success",

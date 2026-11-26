@@ -7,7 +7,7 @@ import numpy as np
 
 from app.logging_conf import get_logger
 from app.qa.embedder import Embedder
-from app.qa.store import QAEntry, QAStore
+from app.qa.store import QAEntry, QAStore, resume_hash
 
 MODULE = "qa.matcher"
 
@@ -40,6 +40,11 @@ class QAMatcher:
     def match(self, resume_text: str, question: str) -> QAMatch | None:
         entries = self.store.load(resume_text)
         if not entries:
+            # 题库为空也要留痕：否则"录入成功但从没命中"只能靠猜
+            self._log.info("题库为空，跳过匹配", module=MODULE,
+                           location="QAMatcher.match", status="skip",
+                           resume_hash=resume_hash(resume_text)[:16],
+                           question_len=len(question))
             return None
 
         query = self.embedder.embed([question])[0]
