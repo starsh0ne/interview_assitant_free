@@ -11,7 +11,7 @@ import threading
 import traceback
 from pathlib import Path
 
-from PySide6.QtCore import Signal
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
     QComboBox, QFileDialog, QFormLayout, QGroupBox, QHBoxLayout,
     QLabel, QLineEdit, QMessageBox, QPushButton, QVBoxLayout, QWidget,
@@ -50,6 +50,8 @@ class SettingsWindow(QWidget):
         self._devices = list_audio_devices()
         self._log = get_logger()
         self.setWindowTitle("面试辅助 · 设置")
+        # Qt.Tool 不占用任务栏；悬浮窗已使用该标志，设置面板保持一致
+        self.setWindowFlags(Qt.Tool)
         self.setMinimumWidth(520)
         self._build_ui()
         self.resume_card_ready.connect(self._on_card_ready)

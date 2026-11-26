@@ -4,12 +4,14 @@
 """
 from __future__ import annotations
 
+import ctypes
 import sys
 import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QApplication
 
 from app.core.config import AppConfig
@@ -36,9 +38,14 @@ def main() -> int:
     for name, window in (("overlay", overlay), ("settings", settings)):
         hwnd = int(window.winId())
         state = get_window_stealth(hwnd)
-        print(f"{name}: hwnd={hwnd}, stealth={state}, label={window.stealth_label.text()}")
+        ex_style = ctypes.windll.user32.GetWindowLongW(hwnd, -20)
+        tool_window = bool(ex_style & 0x80)  # WS_EX_TOOLWINDOW: 不进任务栏
+        print(f"{name}: hwnd={hwnd}, stealth={state}, toolwindow={tool_window}, "
+              f"label={window.stealth_label.text()}")
         if state is not True:
             failures.append(f"{name} affinity 未生效")
+        if not tool_window or not (window.windowFlags() & Qt.Tool):
+            failures.append(f"{name} 仍在任务栏")
 
     # 双击切置顶会重建原生窗口，隐身必须重新应用
     overlay.mouseDoubleClickEvent(None)

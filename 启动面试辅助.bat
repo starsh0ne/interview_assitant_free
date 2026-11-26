@@ -79,11 +79,13 @@ echo [启动] 正在启动面试辅助工具...
 echo   设置面板：上传简历 -^> 选强度 -^> 点"开始辅助"
 echo   悬浮窗：拖动移动，双击切换置顶
 echo.
+"!PY!" -c "import ctypes; ctypes.windll.user32.ShowWindow(ctypes.windll.kernel32.GetConsoleWindow(), 0)" >nul 2>&1
 "!PY!" -m app.main
-
-if !ERRORLEVEL! NEQ 0 (
-    echo.
-    echo [错误] 应用异常退出，请查看 logs\app.jsonl 或把此窗口内容发给 AI 排错。
-    pause
-)
+set "APP_RC=!ERRORLEVEL!"
+if "!APP_RC!"=="0" goto :done
+"!PY!" -c "import ctypes; ctypes.windll.user32.ShowWindow(ctypes.windll.kernel32.GetConsoleWindow(), 5)" >nul 2>&1
+echo.
+echo [错误] 应用异常退出（退出码 !APP_RC!），请查看 logs\app.jsonl。
+pause
+:done
 endlocal
