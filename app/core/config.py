@@ -45,7 +45,7 @@ class AppConfig(BaseModel):
 
     # 本地题库（按简历哈希隔离）
     qa_enabled: bool = True
-    qa_similarity_threshold: float = 0.60   # 宝洁八问实测 16/16 命中、0 误命中；调参见 tests/tune_qa_threshold.py
+    qa_similarity_threshold: float = 0.66   # 0.66 实测 15/16 命中、0 误命中；可挡住 0.62~0.63 的跨题型误命中。调参见 tests/tune_qa_threshold.py
     qa_embed_model: str = "BAAI/bge-small-zh-v1.5"
     qa_store_dir: str = str(PROJECT_ROOT / "qa_store")
 
