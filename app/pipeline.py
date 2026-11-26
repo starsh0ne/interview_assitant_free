@@ -28,6 +28,10 @@ from app.qa.store import QAStore
 
 MODULE = "pipeline"
 
+# 送入模型的最近问答轮数：第 1 问 0 轮、第 2 问 1 轮、第 3 问起固定 2 轮
+MAX_HISTORY_TURNS = 2
+MAX_HISTORY_MESSAGES = MAX_HISTORY_TURNS * 2
+
 
 class Pipeline(QObject):
     """QObject 提供跨线程信号，UI 线程连接信号更新界面。"""
@@ -59,6 +63,8 @@ class Pipeline(QObject):
         self._worker: threading.Thread | None = None
         self._pending: list[Future] = []
         self._self_context: list[str] = []
+        # 最近 N 轮问答历史（user=面试官问题 / assistant=给出的答案，含题库直出）
+        self._qa_history: list[dict] = []
         self._prefetched: dict[int, Future] = {}   # seg_id → 预转写 Future（未等待）
         self._log = get_logger()
         self.qa_store = QAStore(config.qa_store_dir)
@@ -78,6 +84,7 @@ class Pipeline(QObject):
         self.think_level = think_level
         self._stop_event.clear()
         self._self_context = []
+        self._qa_history = []   # 新一轮面试从 0 轮历史开始
         self._prefetched = {}
         self._worker = threading.Thread(target=self._run, name="pipeline-worker", daemon=True)
         self._worker.start()
@@ -109,6 +116,24 @@ class Pipeline(QObject):
                 self.error_occurred.emit(MODULE, str(e), segment.trace_id)
             finally:
                 unbind_session_trace()
+
+    @staticmethod
+    def _answer_text(opener: str, points: list[str]) -> str:
+        """把要点式答案拼成单段文本，作为 assistant 历史内容。"""
+        parts = [opener] if opener else []
+        parts.extend(p for p in points if p)
+        return "\n".join(parts)
+
+    def _record_turn(self, question: str, answer_text: str) -> None:
+        """记录一轮问答（面试官问题 + 给出的答案），裁剪到最近 MAX_HISTORY_TURNS 轮。"""
+        self._qa_history.extend([
+            {"role": "user", "content": question},
+            {"role": "assistant", "content": answer_text},
+        ])
+        self._qa_history = self._qa_history[-MAX_HISTORY_MESSAGES:]
+        self._log.info("记录问答历史", module=MODULE, location="Pipeline._record_turn",
+                       status="success", turns=len(self._qa_history) // 2,
+                       question_len=len(question), answer_len=len(answer_text))
 
     def _handle_segment(self, segment: AudioSegment) -> None:
         log = get_logger()
@@ -179,6 +204,11 @@ class Pipeline(QObject):
                     self.answer_line_ready.emit("point", point, transcript.trace_id)
                 self.answer_ready.emit(transcript.text, hit.entry.opener,
                                        hit.entry.points, transcript.trace_id)
+                # C 方案：题库直出同样写入对话历史，供后续追问衔接
+                self._record_turn(
+                    transcript.text,
+                    self._answer_text(hit.entry.opener, hit.entry.points),
+                )
                 return
 
         # 未命中：触发 AI 分析（流式，逐行推 UI，首条结论最快上屏）
@@ -188,6 +218,7 @@ class Pipeline(QObject):
             self_context="\n".join(self._self_context),
             think_level=self.think_level,
             trace_id=transcript.trace_id,
+            history=list(self._qa_history),   # 副本：本轮记录不影响当前请求
         )
 
         def on_line(kind: str, text: str):
@@ -196,3 +227,4 @@ class Pipeline(QObject):
 
         answer = self.llm.answer_safe_stream(req, on_line)
         self.answer_ready.emit(answer.question, answer.opener, answer.points, answer.trace_id)
+        self._record_turn(transcript.text, self._answer_text(answer.opener, answer.points))

@@ -7,7 +7,7 @@ from __future__ import annotations
 import time
 import traceback
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from app.core.models import Answer, ThinkLevel
 from app.logging_conf import get_logger
@@ -20,9 +20,10 @@ class AnswerRequest:
     """一次回答生成请求。"""
     question: str
     resume_text: str = ""
-    self_context: str = ""        # 我方此前回答的上下文（可选）
+    self_context: str = ""        # 我方此前口述的上下文（可选）
     think_level: ThinkLevel = ThinkLevel.LOW
     trace_id: str = ""
+    history: list[dict] = field(default_factory=list)  # 近 N 轮 [{"role":"user"/"assistant","content":...}]
 
 
 class BaseLLM(ABC):
@@ -55,7 +56,8 @@ class BaseLLM(ABC):
         start = time.perf_counter()
         log.info("AI 分析开始", module=MODULE, location=f"{self.name}.answer_stream",
                  status="start", think_level=req.think_level.value,
-                 question_len=len(req.question), resume_len=len(req.resume_text))
+                 question_len=len(req.question), resume_len=len(req.resume_text),
+                 history_turns=len(req.history) // 2)
         try:
             result = self.answer_stream(req, on_line)
             result.latency_ms = int((time.perf_counter() - start) * 1000)

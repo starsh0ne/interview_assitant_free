@@ -38,7 +38,11 @@ SYSTEM_PROMPT = """你是就业面试的实时辅助教练：面试官刚问完�
 
 【语言风格】
 口语衔接（"重点是/另外/项目里其实"），禁书面腔（首先/其次/综上所述/总而言之/值得注意的是）。
-长度原则：该短则短，宁可少而具体，不要多而空洞；禁止每题等长。"""
+长度原则：该短则短，宁可少而具体，不要多而空洞；禁止每题等长。
+
+【多轮衔接】
+若上下文含此前问答，遇到"上个问题/你刚才提到/继续说说"等指代表达，须依据历史回答；
+历史里没有的信息不要编造，可结合速查卡补全。"""
 
 
 class DeepSeekLLM(BaseLLM):
@@ -64,6 +68,8 @@ class DeepSeekLLM(BaseLLM):
             model=self.config.deepseek_model,
             messages=[
                 {"role": "system", "content": SYSTEM_PROMPT},
+                # 近 N 轮真实对话：面试官= user，给出的答案= assistant（含题库直出）
+                *req.history,
                 {"role": "user", "content": user_prompt},
             ],
             max_tokens=params["max_tokens"],
