@@ -14,13 +14,17 @@ from pathlib import Path
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
     QComboBox, QFileDialog, QFormLayout, QGroupBox, QHBoxLayout,
-    QLabel, QLineEdit, QMessageBox, QPushButton, QVBoxLayout, QWidget,
+    QLabel, QLineEdit, QListWidget, QListWidgetItem, QMessageBox, QPlainTextEdit,
+    QPushButton, QVBoxLayout, QWidget,
 )
 
 from app.audio.devices import list_audio_devices
 from app.core.config import AppConfig
 from app.core.models import ThinkLevel
 from app.logging_conf import get_logger
+from app.qa.embedder import Embedder
+from app.qa.pg8 import PG8_SAMPLES
+from app.qa.store import QAStore, resume_hash
 from app.resume.parser import parse_resume, supported_extensions
 from app.ui.stealth import STEALTH_LABEL, apply_stealth_to_widget
 
@@ -49,6 +53,8 @@ class SettingsWindow(QWidget):
         self._card_gen_lock = threading.Lock()
         self._devices = list_audio_devices()
         self._log = get_logger()
+        self.qa_store = QAStore(config.qa_store_dir)
+        self.qa_embedder = Embedder(config)
         self.setWindowTitle("面试辅助 · 设置")
         # Qt.Tool 不占用任务栏；悬浮窗已使用该标志，设置面板保持一致
         self.setWindowFlags(Qt.Tool)
@@ -123,6 +129,41 @@ class SettingsWindow(QWidget):
         kl.addWidget(QLabel("从环境变量 DEEPSEEK_API_KEY 预填；留空则使用配置文件中的值。密钥不写入磁盘。"))
         root.addWidget(key_box)
 
+        # 本地题库
+        qa_box = QGroupBox("5. 本地题库（按简历哈希隔离）")
+        qv = QVBoxLayout(qa_box)
+        self.qa_status = QLabel("先上传简历，再录入题库")
+        self.qa_status.setWordWrap(True)
+        self.qa_status.setStyleSheet("color: #7a8296;")
+        qv.addWidget(self.qa_status)
+
+        self.qa_list = QListWidget()
+        self.qa_list.setMaximumHeight(110)
+        qv.addWidget(self.qa_list)
+
+        qa_form = QFormLayout()
+        self.qa_question = QLineEdit()
+        self.qa_question.setPlaceholderText("问题（支持面试官的改写表达）")
+        self.qa_answer = QPlainTextEdit()
+        self.qa_answer.setPlaceholderText("答案：第一行结论，后续每行一条要点")
+        self.qa_answer.setMaximumHeight(70)
+        qa_form.addRow("问题:", self.qa_question)
+        qa_form.addRow("答案:", self.qa_answer)
+        qv.addLayout(qa_form)
+
+        qa_btns = QHBoxLayout()
+        btn_qa_add = QPushButton("添加条目")
+        btn_qa_add.clicked.connect(self._on_qa_add)
+        btn_qa_del = QPushButton("删除选中")
+        btn_qa_del.clicked.connect(self._on_qa_delete)
+        btn_qa_pg8 = QPushButton("导入宝洁八大问")
+        btn_qa_pg8.clicked.connect(self._on_qa_import_pg8)
+        qa_btns.addWidget(btn_qa_add)
+        qa_btns.addWidget(btn_qa_del)
+        qa_btns.addWidget(btn_qa_pg8)
+        qv.addLayout(qa_btns)
+        root.addWidget(qa_box)
+
         # 按钮
         btn_row = QHBoxLayout()
         self.btn_start = QPushButton("开始辅助")
@@ -134,6 +175,7 @@ class SettingsWindow(QWidget):
         btn_row.addWidget(self.btn_start)
         btn_row.addWidget(self.btn_stop)
         root.addLayout(btn_row)
+        self._reload_qa_list()
 
     def showEvent(self, event) -> None:
         super().showEvent(event)
@@ -150,6 +192,7 @@ class SettingsWindow(QWidget):
             text = parse_resume(path)
             self.resume_text = text
             self.resume_card = ""   # 新简历：作废旧速查卡
+            self._reload_qa_list()  # 简历变了 → 切到该简历的独立题库
             self.resume_path.setText(path)
             self.resume_status.setText(f"已加载 · {len(text)} 字符 · 速查卡生成中...")
             self.resume_status.setStyleSheet("color:#b8860b;")
@@ -211,6 +254,61 @@ class SettingsWindow(QWidget):
         else:
             self.resume_status.setText(f"已加载 · 速查卡生成失败，将使用简历前 600 字")
             self.resume_status.setStyleSheet("color:#2d7d46;")
+
+    # ---- 本地题库 ----
+    def _reload_qa_list(self) -> None:
+        self.qa_list.clear()
+        if not self.resume_text:
+            self.qa_status.setText("先上传简历，再录入题库")
+            return
+        entries = self.qa_store.load(self.resume_text)
+        for entry in entries:
+            item = QListWidgetItem(f"[{entry.tag or '自定义'}] {entry.question}")
+            item.setData(Qt.UserRole, entry.id)
+            self.qa_list.addItem(item)
+        self.qa_status.setText(
+            f"简历 {resume_hash(self.resume_text)[:12]} · 题库 {len(entries)} 条 · "
+            f"命中阈值 {self.config.qa_similarity_threshold}"
+        )
+
+    def _on_qa_add(self) -> None:
+        if not self.resume_text:
+            QMessageBox.information(self, "请先上传简历", "题库按简历隔离，请先上传简历。")
+            return
+        question = self.qa_question.text().strip()
+        answer = self.qa_answer.toPlainText().strip()
+        if not question or not answer:
+            QMessageBox.information(self, "题库条目不完整", "请填写问题和答案。")
+            return
+        vector = self.qa_embedder.embed([question])[0].tolist()
+        self.qa_store.add(self.resume_text, question, answer, vector=vector)
+        self.qa_question.clear()
+        self.qa_answer.clear()
+        self._reload_qa_list()
+
+    def _on_qa_delete(self) -> None:
+        if not self.resume_text:
+            return
+        item = self.qa_list.currentItem()
+        if item is None:
+            return
+        self.qa_store.delete(self.resume_text, item.data(Qt.UserRole))
+        self._reload_qa_list()
+
+    def _on_qa_import_pg8(self) -> None:
+        if not self.resume_text:
+            QMessageBox.information(self, "请先上传简历", "题库按简历隔离，请先上传简历。")
+            return
+        existing = {e.question for e in self.qa_store.load(self.resume_text)}
+        samples = [s for s in PG8_SAMPLES if s["question"] not in existing]
+        if not samples:
+            QMessageBox.information(self, "无需导入", "宝洁八大问已全部在题库中。")
+            return
+        vectors = self.qa_embedder.embed([s["question"] for s in samples])
+        for sample, vector in zip(samples, vectors):
+            self.qa_store.add(self.resume_text, sample["question"], sample["answer"],
+                              tag=sample["tag"], vector=vector.tolist())
+        self._reload_qa_list()
 
     def _on_start(self) -> None:
         if not self.resume_text:

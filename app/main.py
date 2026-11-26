@@ -107,6 +107,7 @@ def main() -> int:
             pipeline.answer_ready.connect(overlay.on_answer)
             pipeline.status_changed.connect(overlay.on_status)
             pipeline.error_occurred.connect(overlay.on_error)
+            pipeline.qa_hit_ready.connect(overlay.on_qa_hit)
 
             # 先启动流水线（工作线程就绪），再启动采集；用速查卡（降级为简历前600字）
             pipeline.start(settings.effective_resume, level)
@@ -119,6 +120,7 @@ def main() -> int:
                 try:
                     llm.warmup()
                     transcriber._get_model()
+                    pipeline.qa_embedder.warmup()
                 except Exception:
                     pass  # 预热失败不影响主流程，首次调用时会再加载
 

@@ -33,6 +33,8 @@ class OverlayWindow(QWidget):
         self._drag_pos = None
         self._pinned = True
         self._stream_lines = 0
+        self._qa_hit = False
+        self._qa_score = 0.0
         self._log = get_logger()
         self._build_ui()
 
@@ -80,6 +82,13 @@ class OverlayWindow(QWidget):
         self.stealth_label.setStyleSheet("color: #6fdc9a;")
         inner.addWidget(self.stealth_label)
 
+        self.qa_label = QLabel("")
+        self.qa_label.setFont(QFont("Microsoft YaHei", 9))
+        self.qa_label.setStyleSheet("color: #ffd479;")
+        self.qa_label.setWordWrap(True)
+        self.qa_label.hide()
+        inner.addWidget(self.qa_label)
+
         outer.addWidget(self.card)
 
     def showEvent(self, event) -> None:
@@ -115,6 +124,8 @@ class OverlayWindow(QWidget):
     # ---- 显示更新（由 Qt 信号触发，运行在 UI 线程）----
     @Slot(str, str, str)
     def on_transcript(self, speaker: str, text: str, trace_id: str) -> None:
+        self._qa_hit = False
+        self.qa_label.hide()
         who = "面试官" if speaker == "interviewer" else "我方"
         self.title.setText(f"识别到{who}发言 · {trace_id[:8]}")
         # 把识别文本真正显示出来；空文本也要明确提示，避免用户以为卡住
@@ -129,7 +140,8 @@ class OverlayWindow(QWidget):
     def on_answer_line(self, kind: str, text: str, trace_id: str) -> None:
         """流式逐行显示：首行结论立刻上屏，要点逐条追加。"""
         if kind == "opener":
-            self.title.setText(f"AI 回答中 · {trace_id[:8]}")
+            if not self._qa_hit:
+                self.title.setText(f"AI 回答中 · {trace_id[:8]}")
             self.a_label.setText(f"➤ {text}")
             self._stream_lines = 1
         else:
@@ -139,9 +151,21 @@ class OverlayWindow(QWidget):
         self._log.info("悬浮窗流式行", module=MODULE, location="OverlayWindow.on_answer_line",
                        status="success", kind=kind, text_len=len(text))
 
+    @Slot(str, float, str)
+    def on_qa_hit(self, matched_question: str, score: float, trace_id: str) -> None:
+        """题库命中：本地标注相似度与原题，AI 流式标题不再覆盖。"""
+        self._qa_hit = True
+        self._qa_score = score
+        self.title.setText(f"题库命中 · {score:.2f} · {trace_id[:8]}")
+        self.qa_label.setText(f"相似度 {score:.2f} · 命中题库：{matched_question}")
+        self.qa_label.show()
+
     @Slot(str, str, list, str)
     def on_answer(self, question: str, opener: str, points: list, trace_id: str) -> None:
-        self.title.setText(f"AI 回答 · {trace_id[:8]}")
+        if self._qa_hit:
+            self.title.setText(f"题库命中 {self._qa_score:.2f} · {trace_id[:8]}")
+        else:
+            self.title.setText(f"AI 回答 · {trace_id[:8]}")
         self._stream_lines = 0   # 流式结束，最终幂等重绘
         self.q_label.setText(f"Q: {question}")
         lines = []

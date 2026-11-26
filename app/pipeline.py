@@ -22,6 +22,9 @@ from app.core.config import AppConfig
 from app.core.models import Answer, AudioSegment, Speaker, ThinkLevel, Transcript
 from app.llm.base import AnswerRequest, BaseLLM
 from app.logging_conf import bind_session_trace, get_logger, unbind_session_trace
+from app.qa.embedder import Embedder
+from app.qa.matcher import QAMatcher
+from app.qa.store import QAStore
 
 MODULE = "pipeline"
 
@@ -39,6 +42,8 @@ class Pipeline(QObject):
     status_changed = Signal(str)
     # 信号：错误（模块, 消息, trace_id）
     error_occurred = Signal(str, str, str)
+    # 信号：题库命中（题库原题, 相似度, trace_id）
+    qa_hit_ready = Signal(str, float, str)
 
     def __init__(self, config: AppConfig, capture: AudioCapture,
                  transcriber: Transcriber, llm: BaseLLM):
@@ -55,6 +60,10 @@ class Pipeline(QObject):
         self._self_context: list[str] = []
         self._prefetched: dict[int, Future] = {}   # seg_id → 预转写 Future（未等待）
         self._log = get_logger()
+        self.qa_store = QAStore(config.qa_store_dir)
+        self.qa_embedder = Embedder(config)
+        self.qa_matcher = QAMatcher(self.qa_store, self.qa_embedder,
+                                    config.qa_similarity_threshold)
 
     def start(self, resume_text: str, think_level: ThinkLevel) -> None:
         """启动流水线。必须在采集 start 之前调用。"""
@@ -147,7 +156,24 @@ class Pipeline(QObject):
                      status="success", text_len=len(transcript.text))
             return
 
-        # 面试官提问：触发 AI 分析（流式，逐行推 UI，首条结论最快上屏）
+        # 面试官提问：先查本地题库，命中则直接回放，零 AI 调用
+        if self.config.qa_enabled:
+            hit = self.qa_matcher.match(self.resume_text, transcript.text)
+            if hit is not None:
+                log.info("题库命中，跳过 AI", module=MODULE,
+                         location="Pipeline._handle_segment", status="success",
+                         score=round(hit.score, 4), entry_id=hit.entry.id,
+                         question=hit.entry.question[:40])
+                self.qa_hit_ready.emit(hit.entry.question, hit.score, transcript.trace_id)
+                if hit.entry.opener:
+                    self.answer_line_ready.emit("opener", hit.entry.opener, transcript.trace_id)
+                for point in hit.entry.points:
+                    self.answer_line_ready.emit("point", point, transcript.trace_id)
+                self.answer_ready.emit(transcript.text, hit.entry.opener,
+                                       hit.entry.points, transcript.trace_id)
+                return
+
+        # 未命中：触发 AI 分析（流式，逐行推 UI，首条结论最快上屏）
         req = AnswerRequest(
             question=transcript.text,
             resume_text=self.resume_text,

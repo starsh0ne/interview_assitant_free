@@ -1,5 +1,9 @@
 # 日志与本地运行产物（可能包含提问/回答/设备名，不入库）
 logs/
+qa_store/
+
+# 向量模型缓存（首次运行联网下载）
+.models/fastembed/
 
 # Python
 __pycache__/

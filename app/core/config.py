@@ -43,6 +43,12 @@ class AppConfig(BaseModel):
     whisper_device: str = "cpu"       # cpu / cuda
     whisper_compute_type: str = "int8"
 
+    # 本地题库（按简历哈希隔离）
+    qa_enabled: bool = True
+    qa_similarity_threshold: float = 0.60   # 宝洁八问实测 16/16 命中、0 误命中；调参见 tests/tune_qa_threshold.py
+    qa_embed_model: str = "BAAI/bge-small-zh-v1.5"
+    qa_store_dir: str = str(PROJECT_ROOT / "qa_store")
+
     # 日志
     log_path: str = str(PROJECT_ROOT / "logs" / "app.jsonl")
 
@@ -62,6 +68,7 @@ class AppConfig(BaseModel):
             "THINK_LEVEL": "think_level",
             "WHISPER_MODEL": "whisper_model",
             "WHISPER_DEVICE": "whisper_device",
+            "QA_SIMILARITY_THRESHOLD": "qa_similarity_threshold",
         }
         for env_key, field in env_map.items():
             if os.environ.get(env_key):

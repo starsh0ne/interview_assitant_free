@@ -15,6 +15,7 @@ dependencies = [
     "pydantic>=2.6,<3",
     "pydantic-settings>=2.2,<3",
     "structlog>=24.1",
+    "fastembed>=0.4,<1",          # 本地中文语义向量（题库相似问题命中）
 ]
 
 [project.optional-dependencies]
