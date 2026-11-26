@@ -25,6 +25,7 @@ from app.logging_conf import bind_session_trace, get_logger, unbind_session_trac
 from app.qa.embedder import Embedder
 from app.qa.matcher import QAMatcher
 from app.qa.store import QAStore
+from app.qa.terms import build_hotwords, extract_terms
 
 MODULE = "pipeline"
 
@@ -82,6 +83,16 @@ class Pipeline(QObject):
         self.resume_text = resume_text
         self.qa_resume_text = qa_resume_text if qa_resume_text is not None else resume_text
         self.think_level = think_level
+        # 领域词提示：从简历全文 + 当前简历题库的问题里提取，注入 Whisper 减少专有名词误转
+        bank_questions = [e.question for e in self.qa_store.load(self.qa_resume_text)]
+        terms = extract_terms(self.qa_resume_text, bank_questions)
+        hotwords = build_hotwords(terms)
+        if hasattr(self.transcriber, "set_hotwords"):
+            self.transcriber.set_hotwords(hotwords)
+        self.qa_matcher.set_terms(terms)   # 匹配前归一化用同一份词表
+        self._log.info("领域词提示生成", module=MODULE, location="Pipeline.start",
+                       status="success", terms=terms[:10], term_count=len(terms),
+                       bank_questions=len(bank_questions))
         self._stop_event.clear()
         self._self_context = []
         self._qa_history = []   # 新一轮面试从 0 轮历史开始
@@ -179,6 +190,9 @@ class Pipeline(QObject):
             return
 
         self.transcript_ready.emit(transcript.speaker.value, transcript.text, transcript.trace_id)
+        log.info("转写文本上屏", module=MODULE, location="Pipeline._handle_segment",
+                 status="success", speaker=transcript.speaker.value,
+                 text=transcript.text, trace_id=transcript.trace_id)
 
         if transcript.speaker == Speaker.SELF:
             # 我方回答：记录上下文，最多保留最近 3 条

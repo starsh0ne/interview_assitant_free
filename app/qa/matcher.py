@@ -8,6 +8,7 @@ import numpy as np
 from app.logging_conf import get_logger
 from app.qa.embedder import Embedder
 from app.qa.store import QAEntry, QAStore, resume_hash
+from app.qa.terms import normalize_question
 
 MODULE = "qa.matcher"
 
@@ -23,7 +24,12 @@ class QAMatcher:
         self.store = store
         self.embedder = embedder
         self.threshold = threshold
+        self._terms: list[str] = []   # 领域词表：匹配前归一化误转（rack→RAG）
         self._log = get_logger()
+
+    def set_terms(self, terms: list[str]) -> None:
+        """注入领域词表（与 Whisper hotwords 同源）。"""
+        self._terms = list(terms)
 
     def _ensure_vectors(self, resume_text: str, entries: list[QAEntry], dim: int) -> None:
         """题目向量缺失或维度不符时补齐并落盘，下次启动免重算。"""
@@ -47,7 +53,13 @@ class QAMatcher:
                            question_len=len(question))
             return None
 
-        query = self.embedder.embed([question])[0]
+        # 匹配前归一化：只纠正词表里存在的误转，不改上屏原文
+        normalized = normalize_question(question, self._terms)
+        if normalized != question:
+            self._log.info("术语归一化", module=MODULE, location="QAMatcher.match",
+                           status="success", original=question, normalized=normalized)
+
+        query = self.embedder.embed([normalized])[0]
         self._ensure_vectors(resume_text, entries, len(query))
         matrix = np.asarray([e.vector for e in entries], dtype=np.float32)
         scores = matrix @ query
@@ -56,6 +68,7 @@ class QAMatcher:
 
         self._log.info("题库相似度匹配", module=MODULE, location="QAMatcher.match",
                        status="success", question_len=len(question),
+                       query_text=normalized, normalized=(normalized != question),
                        top_score=round(score, 4), threshold=self.threshold,
                        matched_id=entries[idx].id, entry_count=len(entries))
 

@@ -23,8 +23,15 @@ class Transcriber:
     def __init__(self, config: AppConfig):
         self.config = config
         self._model = None
+        self._hotwords: str = ""   # 领域词提示，由 pipeline.start 注入
         self._executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="asr")
         self._log = get_logger()
+
+    def set_hotwords(self, hotwords: str) -> None:
+        """设置 Whisper 领域词提示（空串=不注入）。线程安全：仅在 start 前调用。"""
+        self._hotwords = (hotwords or "").strip()
+        self._log.info("领域词提示已设置", module=MODULE, location="Transcriber.set_hotwords",
+                       status="success", word_count=len(self._hotwords.split()) if self._hotwords else 0)
 
     def _get_model(self):
         if self._model is None:
@@ -75,16 +82,19 @@ class Transcriber:
         log = get_logger()
         start = time.perf_counter()
         log.info("转写开始", module=MODULE, location="Transcriber._transcribe",
-                 status="start", speaker=segment.speaker.value, duration_ms=segment.duration_ms)
+                 status="start", speaker=segment.speaker.value, duration_ms=segment.duration_ms,
+                 hotwords_count=len(self._hotwords.split()) if self._hotwords else 0)
         try:
             audio = np.frombuffer(segment.pcm, dtype=np.int16).astype(np.float32) / 32768.0
             model = self._get_model()
-            segments, _info = model.transcribe(
-                audio,
+            decode_kwargs = dict(
                 language="zh",
                 beam_size=1,   # 贪心解码：CPU 上比 beam=5 快 2-3 倍，中文短句准确率损失可忽略
                 vad_filter=True,
             )
+            if self._hotwords:
+                decode_kwargs["hotwords"] = self._hotwords
+            segments, _info = model.transcribe(audio, **decode_kwargs)
             text = "".join(s.text for s in segments).strip()
             text = self._filter_hallucination(text)
 
@@ -96,16 +106,18 @@ class Transcriber:
                 log.warning("转写为空，关闭 VAD 重试", module=MODULE,
                             location="Transcriber._transcribe", status="retry",
                             speaker=segment.speaker.value, duration_ms=segment.duration_ms)
-                segments, _info = model.transcribe(
-                    audio, language="zh", beam_size=1, vad_filter=False,
-                )
+                retry_kwargs = dict(language="zh", beam_size=1, vad_filter=False)
+                if self._hotwords:
+                    retry_kwargs["hotwords"] = self._hotwords
+                segments, _info = model.transcribe(audio, **retry_kwargs)
                 text = "".join(s.text for s in segments).strip()
                 text = self._filter_hallucination(text)
 
             latency = int((time.perf_counter() - start) * 1000)
             log.info("转写完成", module=MODULE, location="Transcriber._transcribe",
                      status="success", speaker=segment.speaker.value,
-                     latency_ms=latency, text_len=len(text), retried=retried)
+                     latency_ms=latency, text_len=len(text), retried=retried,
+                     text=text)   # 原文入日志：误转/错命中可直接回溯（logs/ 已 gitignore）
             return Transcript(text=text, speaker=segment.speaker,
                               trace_id=segment.trace_id, duration_ms=segment.duration_ms,
                               latency_ms=latency)
